@@ -20,13 +20,10 @@ class PipelineRepository:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO pipeline_runs (
-                    execution_id,
-                    pipeline_name,
-                    status,
-                    started_at,
-                    finished_at,
-                    records_processed
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    execution_id, pipeline_name, status, started_at,
+                    finished_at, records_processed
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run.execution_id,
@@ -39,32 +36,57 @@ class PipelineRepository:
             )
 
     def save_step(self, step: PipelineStep) -> None:
-        """Persist a pipeline step execution."""
+        """Persist the current state of a pipeline step.
+
+        A step has one persisted record per pipeline execution. Repeated saves
+        update that record so retry lifecycle transitions do not create
+        duplicate step rows.
+        """
         with sqlite3.connect(self.database) as connection:
-            connection.execute(
+            existing = connection.execute(
                 """
-                INSERT INTO pipeline_steps (
-                    execution_id,
-                    name,
-                    status,
-                    started_at,
-                    finished_at,
-                    records_processed,
-                    attempts,
-                    error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                SELECT id
+                FROM pipeline_steps
+                WHERE execution_id = ? AND name = ?
+                ORDER BY id
+                LIMIT 1
                 """,
-                (
-                    step.execution_id,
-                    step.name,
-                    step.status,
-                    step.started_at.isoformat() if step.started_at else None,
-                    step.finished_at.isoformat() if step.finished_at else None,
-                    step.records_processed,
-                    step.attempts,
-                    step.error_message,
-                ),
+                (step.execution_id, step.name),
+            ).fetchone()
+
+            values = (
+                step.status,
+                step.started_at.isoformat() if step.started_at else None,
+                step.finished_at.isoformat() if step.finished_at else None,
+                step.records_processed,
+                step.attempts,
+                step.error_message,
             )
+
+            if existing is None:
+                connection.execute(
+                    """
+                    INSERT INTO pipeline_steps (
+                        execution_id, name, status, started_at, finished_at,
+                        records_processed, attempts, error_message
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (step.execution_id, step.name, *values),
+                )
+            else:
+                connection.execute(
+                    """
+                    UPDATE pipeline_steps
+                    SET status = ?,
+                        started_at = ?,
+                        finished_at = ?,
+                        records_processed = ?,
+                        attempts = ?,
+                        error_message = ?
+                    WHERE id = ?
+                    """,
+                    (*values, existing[0]),
+                )
 
     def get_run(self, execution_id: str) -> tuple[object, ...] | None:
         """Return a persisted run by execution ID."""
@@ -79,8 +101,7 @@ class PipelineRepository:
         """Return persisted steps for a run."""
         with sqlite3.connect(self.database) as connection:
             cursor = connection.execute(
-                """
-                SELECT execution_id, name, status, started_at,
+                """SELECT execution_id, name, status, started_at,
                     finished_at, records_processed, attempts, error_message
                 FROM pipeline_steps
                 WHERE execution_id = ?
@@ -95,8 +116,7 @@ class PipelineRepository:
         with sqlite3.connect(self.database) as connection:
             cursor = connection.execute(
                 "SELECT * FROM pipeline_runs "
-                "WHERE pipeline_name = ? "
-                "ORDER BY started_at",
+                "WHERE pipeline_name = ? ORDER BY started_at",
                 (pipeline_name,),
             )
             return cursor.fetchall()

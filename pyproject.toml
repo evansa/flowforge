@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flowforge"
-version = "0.2.1"
+version = "0.2.2"
 description = "Developer-first ETL and integration runtime"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,7 +30,6 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 88
 target-version = "py311"
-exclude = ["**/.venv*", "**/build", "**/dist", "**/__pycache__"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "ANN"]

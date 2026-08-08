@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from flowforge import Pipeline
+from flowforge.core.retry import RetryPolicy
 from flowforge.storage.repository import PipelineRepository
 
 
@@ -32,10 +33,13 @@ def test_pipeline_success(tmp_path: Path) -> None:
 
     assert result.status == "SUCCESS"
     assert result.records_processed == 1
-
     repository = PipelineRepository(str(tmp_path / "test.db"))
     assert repository.get_run(result.execution_id) is not None
-    assert len(repository.get_steps(result.execution_id)) == 3
+
+    steps = repository.get_steps(result.execution_id)
+    assert len(steps) == 3
+    assert all(step[2] == "SUCCESS" for step in steps)
+    assert all(step[6] == 1 for step in steps)
 
 
 def test_pipeline_retries_and_succeeds(tmp_path: Path) -> None:
@@ -60,8 +64,15 @@ def test_pipeline_retries_and_succeeds(tmp_path: Path) -> None:
     assert result.status == "SUCCESS"
     assert attempts == 3
 
+    steps = PipelineRepository(str(tmp_path / "retry.db")).get_steps(
+        result.execution_id
+    )
+    assert steps[0][2] == "SUCCESS"
+    assert steps[0][6] == 3
+    assert steps[0][7] is None
 
-def test_pipeline_failure_is_persisted(tmp_path: Path) -> None:
+
+def test_pipeline_failure_records_exact_attempt_count(tmp_path: Path) -> None:
     database = str(tmp_path / "failure.db")
     pipeline = Pipeline(
         "failure-pipeline",
@@ -85,4 +96,51 @@ def test_pipeline_failure_is_persisted(tmp_path: Path) -> None:
     steps = repository.get_steps(runs[0][0])
     assert len(steps) == 1
     assert steps[0][2] == "FAILED"
+    assert steps[0][6] == 2
     assert steps[0][7] == "bad data"
+
+
+def test_step_retry_state_is_persisted(tmp_path: Path) -> None:
+    attempts = 0
+    database = str(tmp_path / "retry-state.db")
+    pipeline = Pipeline(
+        "retry-state",
+        retries=3,
+        retry_delay_seconds=0,
+        database=database,
+    )
+
+    @pipeline.extract()
+    def extract() -> list[int]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("temporary")
+        return [1]
+
+    result = pipeline.run()
+    steps = PipelineRepository(database).get_steps(result.execution_id)
+
+    assert steps[0][2] == "SUCCESS"
+    assert steps[0][6] == 2
+    assert steps[0][7] is None
+
+
+def test_retry_policy_rejects_invalid_configuration() -> None:
+    with pytest.raises(ValueError, match="max_attempts"):
+        RetryPolicy(max_attempts=0)
+
+    with pytest.raises(ValueError, match="delay_seconds"):
+        RetryPolicy(delay_seconds=-1)
+
+
+def test_pipeline_with_no_steps_succeeds(tmp_path: Path) -> None:
+    pipeline = Pipeline(
+        "empty-pipeline",
+        database=str(tmp_path / "empty.db"),
+    )
+
+    result = pipeline.run()
+
+    assert result.status == "SUCCESS"
+    assert result.records_processed == 0

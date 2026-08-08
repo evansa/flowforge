@@ -28,58 +28,93 @@ class PipelineExecutor:
     def execute(self, pipeline: "Pipeline") -> PipelineRun:
         """Execute a pipeline and return its completed run."""
         run = PipelineRun(pipeline_name=pipeline.name)
-        data: object | None = None
+        data: object = None
+        last_records_processed = 0
 
         try:
+            self.repository.save_run(run)
+
             for step_name, function in pipeline.steps:
                 step = PipelineStep(
                     execution_id=run.execution_id,
                     name=step_name,
                 )
                 step.start()
-                self.logger.info(
-                    "pipeline_step_started",
-                    pipeline=pipeline.name,
-                    execution_id=run.execution_id,
-                    step=step_name,
-                )
+                self.repository.save_step(step)
+
+                attempts = 0
+
+                def execute_step(
+                    current_step_name: str = step_name,
+                    current_function: Callable[..., object] = function,
+                    current_data: object = data,
+                ) -> object:
+                    nonlocal attempts
+                    attempts += 1
+                    if current_step_name == "EXTRACT":
+                        return current_function()
+                    return current_function(current_data)
+
+                def handle_retry(
+                    attempt: int,
+                    _delay: float,
+                    error: Exception,
+                    current_step: PipelineStep = step,
+                    current_step_name: str = step_name,
+                    current_pipeline_name: str = pipeline.name,
+                    current_execution_id: str = run.execution_id,
+                ) -> None:
+                    current_step.retry(attempts=attempt, error=error)
+                    self.repository.save_step(current_step)
+                    self.logger.warning(
+                        "pipeline_step_retrying",
+                        pipeline=current_pipeline_name,
+                        execution_id=current_execution_id,
+                        step=current_step_name,
+                        attempt=attempt,
+                        next_attempt=attempt + 1,
+                        error=str(error),
+                    )
 
                 try:
-                    def execute_step(
-                        current_step_name: str = step_name,
-                        current_function: Callable[..., object] = function,
-                        current_data: object | None = data,
-                    ) -> object | None:
-                        if current_step_name == "EXTRACT":
-                            return current_function()
-                        return current_function(current_data)
-
-                    data, attempts = self.retry_policy.execute(execute_step)
-                    step.attempts = attempts
-
-                    if isinstance(data, list):
-                        step.records_processed = len(data)
-                        run.records_processed = len(data)
-
-                    step.complete()
+                    data, attempts = self.retry_policy.execute(
+                        execute_step,
+                        on_retry=handle_retry,
+                    )
+                except Exception as error:
+                    step.fail(error, attempts=attempts)
                     self.repository.save_step(step)
-                    self.logger.info(
-                        "pipeline_step_completed",
+                    self.logger.error(
+                        "pipeline_step_failed",
                         pipeline=pipeline.name,
                         execution_id=run.execution_id,
                         step=step_name,
                         attempts=attempts,
+                        error=str(error),
                     )
-                except Exception as error:
-                    attempts = getattr(step, "attempts", 0)
-                    step.fail(
-                        error,
-                        attempts=max(attempts, self.retry_policy.max_attempts),
-                    )
-                    self.repository.save_step(step)
                     raise
 
-            run.complete()
+                records_processed = len(data) if isinstance(data, list) else 0
+                if isinstance(data, list):
+                    last_records_processed = records_processed
+
+                step.complete(
+                    attempts=attempts,
+                    records_processed=records_processed,
+                )
+                self.repository.save_step(step)
+
+                self.logger.info(
+                    "pipeline_step_completed",
+                    pipeline=pipeline.name,
+                    execution_id=run.execution_id,
+                    step=step_name,
+                    attempts=attempts,
+                    records_processed=records_processed,
+                )
+
+            run.complete(records_processed=last_records_processed)
+            return run
         except Exception as error:
             run.fail()
             self.logger.error(
@@ -91,5 +126,3 @@ class PipelineExecutor:
             raise
         finally:
             self.repository.save_run(run)
-
-        return run

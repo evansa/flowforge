@@ -12,7 +12,7 @@ def initialise_database(database: str = DEFAULT_DATABASE) -> None:
     if database_path.parent != Path("."):
         database_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with sqlite3.connect(database_path) as connection:
+    with sqlite3.connect(database) as connection:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS pipeline_runs (

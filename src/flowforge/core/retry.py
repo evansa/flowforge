@@ -5,6 +5,7 @@ from time import sleep
 from typing import TypeVar
 
 T = TypeVar("T")
+RetryCallback = Callable[[int, float, Exception], None]
 
 
 class RetryPolicy:
@@ -25,12 +26,16 @@ class RetryPolicy:
         self.delay_seconds = delay_seconds
         self.exponential_backoff = exponential_backoff
 
-    def execute(self, function: Callable[[], T]) -> tuple[T, int]:
+    def execute(
+        self,
+        function: Callable[[], T],
+        on_retry: RetryCallback | None = None,
+    ) -> tuple[T, int]:
         """Execute a callable and return its result and attempts used."""
         for attempt in range(1, self.max_attempts + 1):
             try:
                 return function(), attempt
-            except Exception:
+            except Exception as error:
                 if attempt == self.max_attempts:
                     raise
 
@@ -39,6 +44,8 @@ class RetryPolicy:
                     if self.exponential_backoff
                     else self.delay_seconds
                 )
+                if on_retry is not None:
+                    on_retry(attempt, delay, error)
                 if delay:
                     sleep(delay)
 
