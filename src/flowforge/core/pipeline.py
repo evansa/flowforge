@@ -53,6 +53,32 @@ class Pipeline:
 
         return decorator
 
+    # Hook points: override or assign a callable to customise behaviour.
+    def before_step(self, step_name: str, execution_id: str | None = None) -> None:
+        """Called immediately before a step executes.
+
+        Default implementation is a no-op. Users can subclass Pipeline and
+        override this method or set pipeline.before_step = callable at runtime.
+        """
+        return None
+
+    def after_step(
+        self,
+        step_name: str,
+        execution_id: str | None = None,
+        result: object | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        """Called immediately after a step completes (or fails).
+
+        Parameters
+        - step_name: name of the step
+        - execution_id: pipeline execution id for correlation
+        - result: step result when available
+        - error: exception instance when the step failed
+        """
+        return None
+
     def run(self) -> PipelineRun:
         """Execute the pipeline."""
         return self.executor.execute(self)

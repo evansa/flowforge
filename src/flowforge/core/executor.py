@@ -39,6 +39,17 @@ class PipelineExecutor:
                     execution_id=run.execution_id,
                     name=step_name,
                 )
+                # call pipeline hook before the step executes (no-op by default)
+                try:
+                    pipeline.before_step(step_name, run.execution_id)
+                except Exception:
+                    # Hooks should not stop pipeline execution; log and continue.
+                    self.logger.warning(
+                        "pipeline_before_step_hook_failed",
+                        pipeline=pipeline.name,
+                        execution_id=run.execution_id,
+                        step=step_name,
+                    )
                 step.start()
                 self.repository.save_step(step)
 
@@ -92,6 +103,16 @@ class PipelineExecutor:
                         attempts=attempts,
                         error=str(error),
                     )
+                    # notify hook that step failed
+                    try:
+                        pipeline.after_step(step_name, run.execution_id, result=None, error=error)
+                    except Exception:
+                        self.logger.warning(
+                            "pipeline_after_step_hook_failed",
+                            pipeline=pipeline.name,
+                            execution_id=run.execution_id,
+                            step=step_name,
+                        )
                     raise
 
                 records_processed = len(data) if isinstance(data, list) else 0
@@ -103,6 +124,17 @@ class PipelineExecutor:
                     records_processed=records_processed,
                 )
                 self.repository.save_step(step)
+
+                # call after_step hook with the step result
+                try:
+                    pipeline.after_step(step_name, run.execution_id, result=data, error=None)
+                except Exception:
+                    self.logger.warning(
+                        "pipeline_after_step_hook_failed",
+                        pipeline=pipeline.name,
+                        execution_id=run.execution_id,
+                        step=step_name,
+                    )
 
                 self.logger.info(
                     "pipeline_step_completed",
