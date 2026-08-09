@@ -1,6 +1,16 @@
 # FlowForge v0.2.2
 
-Developer-first ETL and integration runtime.
+**FlowForge** is a **developer-first ETL (Extract, Transform, Load) and integration runtime** written in Python.
+
+Key features:
+
+- **Pipeline execution** with step-level lifecycle management and retry tracking
+- **Reliability** — exact retry attempt tracking and failed step persistence
+- **Step-level persistence** and injectable SQLite repository for data management
+- **Type safety** — built with strict type checking using mypy
+- **Modern Python stack** — Python 3.11+, using structlog for structured logging, ruff for linting, pytest for testing
+
+The project is currently at v0.2.2 and it is in active development, with recent improvements to packaging (proper `src/` layout, `pyproject.toml`), type checking configuration, and execution models. It's designed to make it easy to build reliable data pipelines and integrations.
 
 ## What changed
 

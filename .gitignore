@@ -11,3 +11,4 @@ flowforge.db
 dist/
 build/
 .vscode/*.log
+.vscode/settings.json
