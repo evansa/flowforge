@@ -38,3 +38,6 @@ select = ["E", "F", "I", "B", "UP", "ANN"]
 python_version = "3.11"
 strict = true
 mypy_path = "src"
+
+[project.scripts]
+flowforge = "flowforge.cli:main"
