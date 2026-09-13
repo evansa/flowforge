@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING
 from flowforge.core.retry import RetryPolicy
 from flowforge.models.pipeline_run import PipelineRun
 from flowforge.models.pipeline_step import PipelineStep
+from flowforge.models.step_result import StepResult
 from flowforge.observability.logger import get_logger
 from flowforge.storage.repository import PipelineRepository
-from flowforge.models.step_result import StepResult
 
 if TYPE_CHECKING:
     from flowforge.core.pipeline import Pipeline
@@ -40,17 +40,22 @@ class PipelineExecutor:
                     execution_id=run.execution_id,
                     name=step_name,
                 )
-                # call pipeline hook before the step executes (no-op by default)
+
+                # Call the pipeline hook before the step executes.
+                # Hooks should not stop pipeline execution.
                 try:
-                    pipeline.before_step(step_name, run.execution_id)
+                    pipeline.before_step(
+                        step_name,
+                        run.execution_id,
+                    )
                 except Exception:
-                    # Hooks should not stop pipeline execution; log and continue.
                     self.logger.warning(
                         "pipeline_before_step_hook_failed",
                         pipeline=pipeline.name,
                         execution_id=run.execution_id,
                         step=step_name,
                     )
+
                 step.start()
                 self.repository.save_step(step)
 
@@ -61,10 +66,14 @@ class PipelineExecutor:
                     current_function: Callable[..., object] = function,
                     current_data: object = data,
                 ) -> object:
+                    """Execute one pipeline step attempt."""
                     nonlocal attempts
+
                     attempts += 1
+
                     if current_step_name == "EXTRACT":
                         return current_function()
+
                     return current_function(current_data)
 
                 def handle_retry(
@@ -76,8 +85,13 @@ class PipelineExecutor:
                     current_pipeline_name: str = pipeline.name,
                     current_execution_id: str = run.execution_id,
                 ) -> None:
-                    current_step.retry(attempts=attempt, error=error)
+                    """Update state and log when a step is retried."""
+                    current_step.retry(
+                        attempts=attempt,
+                        error=error,
+                    )
                     self.repository.save_step(current_step)
+
                     self.logger.warning(
                         "pipeline_step_retrying",
                         pipeline=current_pipeline_name,
@@ -88,14 +102,26 @@ class PipelineExecutor:
                         error=str(error),
                     )
 
+                # Capture the input before executing the step.
+                #
+                # This is important for LOAD steps because LOAD commonly
+                # returns None. Once the step executes, data is replaced
+                # with the step's return value.
+                input_data = data
+                input_records = len(input_data) if isinstance(input_data, list) else 0
+
                 try:
                     data, attempts = self.retry_policy.execute(
-                    execute_step,
-                    on_retry=handle_retry,
-)
+                        execute_step,
+                        on_retry=handle_retry,
+                    )
                 except Exception as error:
-                    step.fail(error, attempts=attempts)
+                    step.fail(
+                        error,
+                        attempts=attempts,
+                    )
                     self.repository.save_step(step)
+
                     self.logger.error(
                         "pipeline_step_failed",
                         pipeline=pipeline.name,
@@ -104,9 +130,15 @@ class PipelineExecutor:
                         attempts=attempts,
                         error=str(error),
                     )
-                    # notify hook that step failed
+
+                    # Notify the hook that the step failed.
                     try:
-                        pipeline.after_step(step_name, run.execution_id, result=None, error=error)
+                        pipeline.after_step(
+                            step_name,
+                            run.execution_id,
+                            result=None,
+                            error=error,
+                        )
                     except Exception:
                         self.logger.warning(
                             "pipeline_after_step_hook_failed",
@@ -114,32 +146,40 @@ class PipelineExecutor:
                             execution_id=run.execution_id,
                             step=step_name,
                         )
+
                     raise
 
-                input_records = len(data) if isinstance(data, list) else 0
-
+                # Determine how many records the step processed.
                 if isinstance(data, StepResult):
                     records_processed = data.records_processed
                     data = data.data
+
                 elif isinstance(data, list):
                     records_processed = len(data)
-                else:
-                    # LOAD steps commonly return None. In that case, preserve
-                    # the number of records passed into the step.
+
+                elif data is None:
+                    # LOAD steps commonly return None.
+                    # In that case, use the number of records passed
+                    # into the step.
                     records_processed = input_records
 
+                else:
+                    records_processed = 0
+
+                # Preserve the most recent meaningful record count.
                 if isinstance(data, list):
                     last_records_processed = len(data)
+
                 elif records_processed:
                     last_records_processed = records_processed
 
                 step.complete(
-                attempts=attempts,
-                records_processed=records_processed,
+                    attempts=attempts,
+                    records_processed=records_processed,
                 )
                 self.repository.save_step(step)
 
-                # call after_step hook with the step result
+                # Call the after-step hook.
                 try:
                     pipeline.after_step(
                         step_name,
@@ -164,16 +204,22 @@ class PipelineExecutor:
                     records_processed=records_processed,
                 )
 
-            run.complete(records_processed=last_records_processed)
+            run.complete(
+                records_processed=last_records_processed,
+            )
             return run
+
         except Exception as error:
             run.fail()
+
             self.logger.error(
                 "pipeline_failed",
                 pipeline=pipeline.name,
                 execution_id=run.execution_id,
                 error=str(error),
             )
+
             raise
+
         finally:
             self.repository.save_run(run)
