@@ -124,4 +124,5 @@ mypy src
 
 - The project uses a `src/` layout.
 - The default database file is `flowforge.db`.
-- Do not commit `.venv`, local SQLite databases, `__pycache__`, or pytest caches.
+- Do not commit `.venv`, local SQLite databases, `__pycache__`, or pytest caches. 
+- The project uses `ruff` for linting and `mypy` for type checking.
