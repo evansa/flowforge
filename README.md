@@ -5,13 +5,32 @@ FlowForge is a Python ETL and integration runtime for building reliable pipeline
 ## Features
 
 - Pipeline definitions with `extract()`, `transform()`, and `load()` steps
-- Retry policy with configurable attempt counts and delays
+- Pipeline execution with step-level lifecycle management and retry tracking
+- Reliability via exact retry-attempt tracking and failed-step persistence
 - Step-level execution state tracking and persistence
 - Pipeline run history with execution metadata
 - Hook points for `before_step` and `after_step`
 - Local SQLite-backed repository for run and step inspection
 - CLI for running scripts, viewing history, and inspecting executions
 - Strict Python 3.11+ typing and tooling support
+- Modern Python tooling with `structlog`, `ruff`, `mypy`, and `pytest`
+
+The project is currently at v0.2.2 and is in active development. Recent work includes packaging improvements, stricter typing, execution models, SQLite persistence, and CLI/hook support.
+
+## What changed
+
+- Proper `src/` Python package layout
+- `pyproject.toml` packaging and console entry point
+- Structured logging support via `structlog`
+- Strict type checking configuration
+- Ruff configuration
+- Pipeline run and step execution models
+- Step-level persistence
+- Retry policy with attempt tracking
+- Failed step persistence
+- Injectable SQLite repository
+- CLI support for script execution, history, and details
+- Tests covering success, retry, and failure paths
 
 ## Installation
 
@@ -124,5 +143,5 @@ mypy src
 
 - The project uses a `src/` layout.
 - The default database file is `flowforge.db`.
-- Do not commit `.venv`, local SQLite databases, `__pycache__`, or pytest caches. 
+- Do not commit `.venv`, local SQLite databases, `__pycache__`, or pytest caches.
 - The project uses `ruff` for linting and `mypy` for type checking.
