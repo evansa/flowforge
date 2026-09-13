@@ -1,36 +1,21 @@
 # FlowForge v0.2.2
 
-**FlowForge** is a **developer-first ETL (Extract, Transform, Load) and integration runtime** written in Python.
+FlowForge is a Python ETL and integration runtime for building reliable pipeline-style workflows with retries, step tracking, and local SQLite persistence.
 
-Key features:
+## Features
 
-- **Pipeline execution** with step-level lifecycle management and retry tracking
-- **Reliability** — exact retry attempt tracking and failed step persistence
-- **Step-level persistence** and injectable SQLite repository for data management
-- **Hooks** — `before_step` and `after_step` callbacks for custom behavior around each step
-- **CLI** — quick commands for running scripts, viewing run history, and inspecting execution details
-- **Type safety** — built with strict type checking using mypy
-- **Modern Python stack** — Python 3.11+, using structlog for structured logging, ruff for linting, pytest for testing
+- Pipeline definitions with `extract()`, `transform()`, and `load()` steps
+- Retry policy with configurable attempt counts and delays
+- Step-level execution state tracking and persistence
+- Pipeline run history with execution metadata
+- Hook points for `before_step` and `after_step`
+- Local SQLite-backed repository for run and step inspection
+- CLI for running scripts, viewing history, and inspecting executions
+- Strict Python 3.11+ typing and tooling support
 
-The project is currently at v0.2.2 and it is in active development, with recent improvements to packaging (proper `src/` layout, `pyproject.toml`), type checking configuration, execution models, and CLI/hooks support. It's designed to make it easy to build reliable data pipelines and integrations.
+## Installation
 
-## What changed
-
-- Proper `src/` Python package layout
-- `pyproject.toml` packaging
-- Structured logging support via `structlog`
-- Strict type checking configuration
-- Ruff configuration
-- Cleaner VS Code configuration for Pylance
-- Pipeline run and step execution models
-  * Reliable step lifecycle and exact retry attempt tracking
-- Step-level persistence
-- Retry policy with attempt tracking
-- Failed step persistence
-- Injectable SQLite repository
-- Tests for success, retry and failure paths
-
-## Setup on Windows
+On Windows:
 
 ```powershell
 py -3.11 -m venv .venv
@@ -39,17 +24,88 @@ python -m pip install --upgrade pip
 pip install -e ".[dev]"
 ```
 
-Open the **flowforge** folder itself in VS Code. Then select:
+Then select the project interpreter in VS Code:
 
 `Ctrl+Shift+P` → `Python: Select Interpreter` → `.venv\Scripts\python.exe`
 
-For navigation, Pylance should be installed and enabled.
+## Quick start
 
-## Run example
+```python
+from flowforge import Pipeline
+
+pipeline = Pipeline(
+    name="product-sync",
+    retries=3,
+    retry_delay_seconds=0.1,
+    database="flowforge.db",
+)
+
+
+@pipeline.extract()
+def extract_products():
+    return [{"product_id": "1001", "name": "Keyboard"}]
+
+
+@pipeline.transform()
+def transform_products(products):
+    return [{**product, "released": True} for product in products]
+
+
+@pipeline.load()
+def load_products(products):
+    for product in products:
+        print(product)
+
+
+result = pipeline.run()
+print(result.execution_id)
+print(result.status)
+print(result.records_processed)
+```
+
+This executes each step in order while persisting the run and its step state to SQLite.
+
+## Hooks
+
+You can customize pipeline behavior by overriding methods on a `Pipeline` instance or assigning callables at runtime:
+
+```python
+class MyPipeline(Pipeline):
+    def before_step(self, step_name: str, execution_id: str | None = None) -> None:
+        print(f"Running {step_name} for {execution_id}")
+
+    def after_step(
+        self,
+        step_name: str,
+        execution_id: str | None = None,
+        result: object | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        if error is not None:
+            print(f"Step {step_name} failed: {error}")
+```
+
+Hook failures are logged and do not stop pipeline execution.
+
+## CLI usage
+
+The package exposes a `flowforge` command via the project entry point.
+
+```powershell
+flowforge run path\to\script.py
+flowforge history
+flowforge info <execution_id>
+```
+
+The CLI uses the local `flowforge.db` database by default unless a different database is specified in the pipeline configuration.
+
+## Example script
 
 ```powershell
 python examples\product_sync.py
 ```
+
+This creates a sample pipeline run and prints the execution result.
 
 ## Tests
 
@@ -64,6 +120,8 @@ ruff check .
 mypy src
 ```
 
-## Important
+## Notes
 
-Do not commit `.venv`, `flowforge.db`, `__pycache__`, or test caches. They are excluded by `.gitignore`.
+- The project uses a `src/` layout.
+- The default database file is `flowforge.db`.
+- Do not commit `.venv`, local SQLite databases, `__pycache__`, or pytest caches.
