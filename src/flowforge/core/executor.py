@@ -8,6 +8,7 @@ from flowforge.models.pipeline_run import PipelineRun
 from flowforge.models.pipeline_step import PipelineStep
 from flowforge.observability.logger import get_logger
 from flowforge.storage.repository import PipelineRepository
+from flowforge.models.step_result import StepResult
 
 if TYPE_CHECKING:
     from flowforge.core.pipeline import Pipeline
@@ -89,9 +90,9 @@ class PipelineExecutor:
 
                 try:
                     data, attempts = self.retry_policy.execute(
-                        execute_step,
-                        on_retry=handle_retry,
-                    )
+                    execute_step,
+                    on_retry=handle_retry,
+)
                 except Exception as error:
                     step.fail(error, attempts=attempts)
                     self.repository.save_step(step)
@@ -115,19 +116,37 @@ class PipelineExecutor:
                         )
                     raise
 
-                records_processed = len(data) if isinstance(data, list) else 0
+                input_records = len(data) if isinstance(data, list) else 0
+
+                if isinstance(data, StepResult):
+                    records_processed = data.records_processed
+                    data = data.data
+                elif isinstance(data, list):
+                    records_processed = len(data)
+                else:
+                    # LOAD steps commonly return None. In that case, preserve
+                    # the number of records passed into the step.
+                    records_processed = input_records
+
                 if isinstance(data, list):
+                    last_records_processed = len(data)
+                elif records_processed:
                     last_records_processed = records_processed
 
                 step.complete(
-                    attempts=attempts,
-                    records_processed=records_processed,
+                attempts=attempts,
+                records_processed=records_processed,
                 )
                 self.repository.save_step(step)
 
                 # call after_step hook with the step result
                 try:
-                    pipeline.after_step(step_name, run.execution_id, result=data, error=None)
+                    pipeline.after_step(
+                        step_name,
+                        run.execution_id,
+                        result=data,
+                        error=None,
+                    )
                 except Exception:
                     self.logger.warning(
                         "pipeline_after_step_hook_failed",
