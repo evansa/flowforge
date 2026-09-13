@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING
 from flowforge.core.retry import RetryPolicy
 from flowforge.models.pipeline_run import PipelineRun
 from flowforge.models.pipeline_step import PipelineStep
+from flowforge.models.step_result import StepResult
 from flowforge.observability.logger import get_logger
 from flowforge.storage.repository import PipelineRepository
-from flowforge.models.step_result import StepResult
 
 if TYPE_CHECKING:
     from flowforge.core.pipeline import Pipeline
@@ -90,9 +90,9 @@ class PipelineExecutor:
 
                 try:
                     data, attempts = self.retry_policy.execute(
-                    execute_step,
-                    on_retry=handle_retry,
-)
+                        execute_step,
+                        on_retry=handle_retry,
+                    )
                 except Exception as error:
                     step.fail(error, attempts=attempts)
                     self.repository.save_step(step)
@@ -106,7 +106,9 @@ class PipelineExecutor:
                     )
                     # notify hook that step failed
                     try:
-                        pipeline.after_step(step_name, run.execution_id, result=None, error=error)
+                        pipeline.after_step(
+                            step_name, run.execution_id, result=None, error=error
+                        )
                     except Exception:
                         self.logger.warning(
                             "pipeline_after_step_hook_failed",
@@ -134,8 +136,8 @@ class PipelineExecutor:
                     last_records_processed = records_processed
 
                 step.complete(
-                attempts=attempts,
-                records_processed=records_processed,
+                    attempts=attempts,
+                    records_processed=records_processed,
                 )
                 self.repository.save_step(step)
 
