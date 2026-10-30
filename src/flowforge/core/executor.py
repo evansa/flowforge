@@ -105,7 +105,12 @@ class PipelineExecutor:
                     )
                     # notify hook that step failed
                     try:
-                        pipeline.after_step(step_name, run.execution_id, result=None, error=error)
+                        pipeline.after_step(
+                            step_name,
+                            run.execution_id,
+                            result=None,
+                            error=error,
+                        )
                     except Exception:
                         self.logger.warning(
                             "pipeline_after_step_hook_failed",
@@ -127,7 +132,9 @@ class PipelineExecutor:
 
                 # call after_step hook with the step result
                 try:
-                    pipeline.after_step(step_name, run.execution_id, result=data, error=None)
+                    pipeline.after_step(
+                        step_name, run.execution_id, result=data, error=None
+                    )
                 except Exception:
                     self.logger.warning(
                         "pipeline_after_step_hook_failed",
